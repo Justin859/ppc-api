@@ -62,8 +62,8 @@ def api_highlights():
 @app.route('/check-streams-over-limit')
 def check_streams_over_limit():
     # List Venue App Names from indoor soccer venues
-    venues = {};
-    incomming_streams_reached_limit = [];
+    venues = {}
+    incomming_streams_reached_limit = []
 
     cur = mysql.connection.cursor() # connect to database
     cur.execute('''SELECT wow_app_name, id FROM venues WHERE venue_type="indoor_soccer" AND active_status="active"''')
