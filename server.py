@@ -17,18 +17,24 @@ mysql = MySQL(app)
 api = Api(app)
 
 # MySQL configurations
-app.config['MYSQL_USER'] = ''
+app.config['MYSQL_USER'] = 'root'
 app.config['MYSQL_PASSWORD'] = ''
 app.config['MYSQL_DB'] = 'paperclipsa'
 app.config['MYSQL_HOST'] = '127.0.0.1'
 app.config['MYSQL_PORT'] = 3306
+
+# Methods
+
+def get_sec(time_str):
+    h, m, s = time_str.split(':')
+    return int(h) * 3600 + int(m) * 60 + int(s)
 
 # Get Data Routes
 
 class Streams(Resource):
     def get(self):
         cur = mysql.connection.cursor() # connect to database
-        cur.execute('''SELECT wow_app_name FROM venues WHERE venue_type="indoor_soccer" AND active_status="active"''')
+        cur.execute('''SELECT * FROM clip_highlights WHERE clip_extracted=0''')
         rv = cur.fetchall()
         return jsonify(rv)
         
@@ -45,19 +51,52 @@ def api_highlights():
     clip_highlight_name = request.json['highlight_name']
 
     # Get time in seconds of clip start time
+    seconds_duration = get_sec(clip_end_time)
 
     ftr = [3600,60,1]
-    end_time_seconds = sum([a*b for a,b in zip(ftr, map(int,clip_end_time.split(':')))]) - 20 # Subtract 20 seconds for duration of highlight
-    
-    # Convert to time delta to get start time as a string
+    if (seconds_duration > 20):
 
-    clip_start_time = datetime.timedelta(seconds=end_time_seconds).__str__()
+        end_time_seconds = sum([a*b for a,b in zip(ftr, map(int,clip_end_time.split(':')))]) - 20 # Subtract 20 seconds for duration of highlight
+        # Convert to time delta to get start time as a string
+        clip_start_time = datetime.timedelta(seconds=end_time_seconds).__str__()
 
-    clip = VideoFileClip(start_path +'/' + clip_file_name + ".mp4")
-    newclip = clip.subclip(clip_start_time, clip_end_time)
-    newclip.write_videofile("C:/wowza/highlights/"+clip_highlight_name+".mp4")    
+        clip = VideoFileClip(start_path +'/' + clip_file_name + ".mp4")
+        newclip = clip.subclip(clip_start_time, clip_end_time)
+        newclip.write_videofile("C:/wowza/highlights/"+clip_highlight_name+".mp4")  
+        newclip.close()
+        clip.close()
+    else:
+
+        clip = VideoFileClip(start_path +'/' + clip_file_name + ".mp4")
+        newclip = clip.subclip("00:00:00", clip_end_time)
+        newclip.write_videofile("C:/wowza/highlights/"+clip_highlight_name+".mp4")  
+        newclip.close()
+        clip.close()
+
+      
 
     return json.dumps(request.json)
+
+@app.route('/highlights/save')
+def api_save_highlights():
+
+    cur = mysql.connection.cursor()
+    cur.execute('''SELECT * FROM clip_highlights WHERE clip_extracted=0''')
+    highlights = cur.fetchall()
+
+    for highlight in highlights:
+
+        response = requests.post('http://127.0.0.1:5002/highlights', json={'file_name': highlight[3].split(',')[0], 'start_time': highlight[4], 'highlight_name': highlight[3].replace(',', "_").replace(':', '-')})
+        
+        if(response.status_code == requests.codes.ok):
+            conn = mysql.connect
+            cur = conn.cursor() # connect to database
+            cur.execute("UPDATE clip_highlights SET clip_extracted=1 WHERE clip_name='{0}'".format(highlight[3]))
+            conn.commit()
+        else:
+            print('There was an error with the request.')
+
+    return jsonify(highlights)
 
 @app.route('/check-streams-over-limit')
 def check_streams_over_limit():
